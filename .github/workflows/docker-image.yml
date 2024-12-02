@@ -9,8 +9,9 @@ on:
 jobs:
 
   build:
-
     runs-on: ubuntu-latest
+    outputs:
+      tag-id: ${{ steps.get-tag-id.outputs.image_tag_sha }}
 
     steps:
     - uses: actions/checkout@v4
@@ -45,10 +46,25 @@ jobs:
         image_tag=$(echo "$DOCKER_METADATA_OUTPUT_JSON" | jq -r '.tags[] | select(. | test("sha-"))')
         image_tag_sha=$(echo "$image_tag" | grep -o 'sha-[a-f0-9]\+')
         echo "image_tag_sha=$image_tag_sha" >> $GITHUB_OUTPUT
-        
-    
+
+
     - name: docker build and push app
       id: docker-build-and-push-app
       run: |
-        docker build -t  confiape/page:${{ steps.get-tag-id.outputs.image_tag_sha }}  . 
-        docker push confiape/page:${{ steps.get-tag-id.outputs.image_tag_sha }} 
+        docker build -t  confiape/page:${{ steps.get-tag-id.outputs.image_tag_sha }}  .
+        docker push confiape/page:${{ steps.get-tag-id.outputs.image_tag_sha }}
+
+  deploy:
+    runs-on: self-hosted
+    needs:
+      - build
+    steps:
+      - name: run
+        run: |
+          echo tag-id:  ${{ needs.build-dev.outputs.tag-id }}
+      - name: helm update
+        run: |
+          helm repo add confiape https://confiape.github.io/helm-charts/
+          helm repo update
+          helm upgrade --install --set image.tag=${{ needs.build-dev.outputs.tag-id }} -n dev loan-dev-page  confiape/confiape-app --reuse-values --wait
+
